@@ -1,0 +1,5 @@
+{
+  "name": "SQL Query Manager & Assistant",
+  "description": "A dashboard to manage SQL query collections per project (Excel) with an AI assistant to help find and explain queries.",
+  "requestFramePermissions": []
+}
