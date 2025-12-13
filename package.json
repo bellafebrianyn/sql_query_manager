@@ -4,12 +4,16 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -n \"API,VITE\" -c \"cyan,magenta\" \"npm run dev:api\" \"npm run dev:vite\"",
+    "dev:vite": "vite",
+    "dev:api": "tsx server-dev.js",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "init-db": "node scripts/init-db.js"
   },
   "dependencies": {
     "@google/genai": "^1.33.0",
+    "@vercel/postgres": "^0.10.0",
     "dotenv": "^17.2.3",
     "lucide-react": "^0.560.0",
     "react": "^19.2.1",
@@ -18,7 +22,10 @@
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@vercel/node": "^5.5.15",
     "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.2.1",
+    "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

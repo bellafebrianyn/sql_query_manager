@@ -20,7 +20,7 @@ async function generateSignature(params: Record<string, string>): Promise<string
 }
 
 
-export const uploadToCloudinary = async (file: File): Promise<void> => {
+export const uploadToCloudinary = async (file: File): Promise<string> => {
   if (!CLOUD_NAME || !API_KEY) {
     throw new Error(`Cloudinary credentials (CLOUD_NAME ${CLOUD_NAME} or API_KEY ${API_KEY}) are missing.`);
   }
@@ -52,21 +52,74 @@ export const uploadToCloudinary = async (file: File): Promise<void> => {
     const errorBody = await response.json();
     throw new Error(`Cloudinary Upload Failed: ${errorBody.error?.message || response.statusText}`);
   }
+
+  const result = await response.json();
+  const fileUrl = result.secure_url || result.url;
+  
+  // Save URL to database
+  try {
+    const saveResponse = await fetch('/api/save-file-url', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        fileUrl: fileUrl,
+        publicId: 'project_data_master'
+      })
+    });
+    
+    if (!saveResponse.ok) {
+      const errorData = await saveResponse.json();
+      console.warn('Failed to save URL to database:', errorData);
+      // Don't throw error, just log warning - upload was successful
+    } else {
+      console.log('File URL saved to database successfully');
+    }
+  } catch (error) {
+    console.warn('Failed to save URL to database:', error);
+    // Don't throw error, just log warning - upload was successful
+  }
+  
+  return fileUrl;
+};
+
+/**
+ * Gets the Cloudinary file URL from database
+ */
+export const getCloudinaryFileUrl = async (): Promise<string | null> => {
+  try {
+    const response = await fetch('/api/get-file-url?publicId=project_data_master');
+    if (response.ok) {
+      const data = await response.json();
+      return data.url;
+    }
+    return null;
+  } catch (error) {
+    console.warn('Failed to get URL from database:', error);
+    return null;
+  }
 };
 
 /**
  * Fetches the raw Excel file from Cloudinary.
  * Returns an ArrayBuffer to be parsed by XLSX.
+ * First tries to get URL from database, falls back to constructing URL.
  */
 export const fetchFromCloudinary = async (): Promise<ArrayBuffer> => {
-  if (!CLOUD_NAME) {
-    throw new Error("CLOUDINARY_CLOUD_NAME is missing.");
-  }
-
-  // Add a cache-busting timestamp to ensure we get the latest version
-  const url = `https://res.cloudinary.com/${CLOUD_NAME}/raw/upload/project_data_master.xlsx?t=${Date.now()}`;
+  // Try to get URL from database first
+  let fileUrl = await getCloudinaryFileUrl();
   
-  const response = await fetch(url);
+  // Fallback to constructing URL if not in database
+  if (!fileUrl) {
+    if (!CLOUD_NAME) {
+      throw new Error("CLOUDINARY_CLOUD_NAME is missing.");
+    }
+    // Add a cache-busting timestamp to ensure we get the latest version
+    fileUrl = `https://res.cloudinary.com/${CLOUD_NAME}/raw/upload/project_data_master.xlsx?t=${Date.now()}`;
+  }
+  
+  const response = await fetch(fileUrl);
   
   if (!response.ok) {
     throw new Error(`Failed to fetch file: ${response.statusText}`);

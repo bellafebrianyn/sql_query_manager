@@ -66,34 +66,47 @@ const App: React.FC = () => {
     return allProjects;
   };
 
-  // Load data from Cloudinary on mount
+  // Load data from Cloudinary on mount and when userRole changes
+  // Both CMS and CF use the same data source (database -> Cloudinary)
   useEffect(() => {
+    if (!userRole) return; // Don't load data if user is not logged in
+
     const loadCloudData = async () => {
       setIsSyncing(true);
+      console.log(`[${userRole.toUpperCase()}] Starting data sync from database/Cloudinary...`);
       try {
+        // Both CMS and CF fetch from the same source: database -> Cloudinary
+        console.log(`[${userRole.toUpperCase()}] Fetching file URL from database...`);
         const buffer = await fetchFromCloudinary();
+        console.log(`[${userRole.toUpperCase()}] File downloaded, parsing Excel data...`);
         const parsedData = parseExcelBuffer(buffer);
         if (parsedData.length > 0) {
           setProjectData(parsedData);
           setHasLoadedCustomData(true);
           initializeChatSession(parsedData);
-          console.log("Data synced from Cloudinary successfully");
+          console.log(`✅ [${userRole.toUpperCase()}] Data synced successfully: ${parsedData.length} project(s) loaded`);
+        } else {
+          console.warn(`⚠️ [${userRole.toUpperCase()}] No data found in Excel file`);
         }
       } catch (error) {
-        console.warn("Could not fetch from Cloudinary (using sample data):", error);
+        console.warn(`❌ [${userRole.toUpperCase()}] Could not fetch from Cloudinary:`, error);
         setCloudError("Could not sync with cloud. Showing local/sample data.");
         // Use local storage as fallback if cloud fails
         const savedData = localStorage.getItem('sql_app_data');
         if (savedData) {
+          console.log(`[${userRole.toUpperCase()}] Using cached data from localStorage`);
           const parsed = JSON.parse(savedData);
           setProjectData(parsed);
           setHasLoadedCustomData(true);
           initializeChatSession(parsed);
         } else {
+          console.log(`[${userRole.toUpperCase()}] Using sample data`);
+          setProjectData(SAMPLE_DATA);
           initializeChatSession(SAMPLE_DATA);
         }
       } finally {
         setIsSyncing(false);
+        console.log(`[${userRole.toUpperCase()}] Data sync completed`);
       }
     };
 
@@ -106,7 +119,7 @@ const App: React.FC = () => {
     }, 100);
 
     return () => clearInterval(checkXLSX);
-  }, []);
+  }, [userRole]); // Reload data when userRole changes
 
   const handleDataLoaded = (newData: ProjectData[]) => {
     setProjectData(newData);
@@ -149,8 +162,10 @@ const App: React.FC = () => {
                   {userRole} Mode
                 </span>
                 {isSyncing && (
-                  <span className="flex items-center gap-1 text-[10px] text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full animate-pulse border border-blue-100">
-                    <Cloud className="w-3 h-3" /> Syncing...
+                  <span className="flex items-center gap-1.5 text-[10px] text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full animate-pulse border border-blue-200 shadow-sm">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <Cloud className="w-3 h-3" />
+                    <span className="font-medium">Syncing from database...</span>
                   </span>
                 )}
               </div>
@@ -212,16 +227,37 @@ const App: React.FC = () => {
             {!hasLoadedCustomData && !isSyncing && !cloudError && (
             <div className="bg-blue-50 text-blue-600 px-4 py-1 text-center text-xs border-b border-blue-100">
                 Currently viewing <strong>Sample Data</strong>. 
-                {userRole === 'cms' ? " Upload Excel to sync to Cloud." : " Waiting for admin to upload project data."}
+                {userRole === 'cms' 
+                  ? " Upload Excel to sync to Cloud." 
+                  : " Data will load automatically from database when available."}
             </div>
             )}
         </div>
 
-        <div className={`h-full transition-opacity duration-300 ${activeTab === 'queries' ? 'block' : 'hidden'}`}>
+        {/* Loading Overlay when syncing */}
+        {isSyncing && (
+          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+            <div className="flex flex-col items-center gap-4">
+              <div className="relative">
+                <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+                <Cloud className="w-6 h-6 text-blue-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse" />
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-semibold text-slate-800 mb-1">Syncing Data</p>
+                <p className="text-sm text-slate-500">Fetching from database and Cloudinary...</p>
+              </div>
+              <div className="w-64 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-600 rounded-full animate-pulse" style={{ width: '60%' }}></div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className={`h-full transition-opacity duration-300 ${isSyncing ? 'opacity-30 pointer-events-none' : ''} ${activeTab === 'queries' ? 'block' : 'hidden'}`}>
           <ProjectViewer data={projectData} />
         </div>
         
-        <div className={`h-full transition-opacity duration-300 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
+        <div className={`h-full transition-opacity duration-300 ${isSyncing ? 'opacity-30 pointer-events-none' : ''} ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
           <ChatInterface />
         </div>
       </main>
