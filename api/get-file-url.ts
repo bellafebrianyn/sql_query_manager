@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getCloudinaryUrl } from './db';
+import { getCloudinaryUrl } from './db.js';
+
 
 export default async function handler(
   request: VercelRequest,

@@ -28,7 +28,7 @@ async function handleRequest(req, res) {
     try {
       // Dynamic import API handlers
       if (pathname === '/api/get-file-url') {
-        const { getCloudinaryUrl } = await import('./api/db.ts');
+        const { getCloudinaryUrl } = await import('./api/db.js');
         const publicId = url.searchParams.get('publicId') || 'project_data_master';
         const result = await getCloudinaryUrl(publicId);
         
@@ -64,7 +64,7 @@ async function handleRequest(req, res) {
               return;
             }
 
-            const { saveCloudinaryUrl } = await import('./api/db.ts');
+            const { saveCloudinaryUrl } = await import('./api/db.js');
             await saveCloudinaryUrl(fileUrl, publicId || 'project_data_master');
             
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -82,7 +82,7 @@ async function handleRequest(req, res) {
       }
 
       if (pathname === '/api/init-db') {
-        const { initDatabase } = await import('./api/db.ts');
+        const { initDatabase } = await import('./api/db.js');
         await initDatabase();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, message: 'Database initialized successfully' }));

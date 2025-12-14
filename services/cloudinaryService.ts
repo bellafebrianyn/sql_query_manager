@@ -108,22 +108,41 @@ export const getCloudinaryFileUrl = async (): Promise<string | null> => {
  */
 export const fetchFromCloudinary = async (): Promise<ArrayBuffer> => {
   // Try to get URL from database first
-  let fileUrl = await getCloudinaryFileUrl();
+  // let fileUrl = await getCloudinaryFileUrl();
   
-  // Fallback to constructing URL if not in database
-  if (!fileUrl) {
-    if (!CLOUD_NAME) {
-      throw new Error("CLOUDINARY_CLOUD_NAME is missing.");
-    }
-    // Add a cache-busting timestamp to ensure we get the latest version
-    fileUrl = `https://res.cloudinary.com/${CLOUD_NAME}/raw/upload/project_data_master.xlsx?t=${Date.now()}`;
-  }
+  // // Fallback to constructing URL if not in database
+  // if (!fileUrl) {
+  //   if (!CLOUD_NAME) {
+  //     throw new Error("CLOUDINARY_CLOUD_NAME is missing.");
+  //   }
+  //   // Add a cache-busting timestamp to ensure we get the latest version
+  //   fileUrl = `https://res.cloudinary.com/${CLOUD_NAME}/raw/upload/project_data_master.xlsx?t=${Date.now()}`;
+  // }
   
-  const response = await fetch(fileUrl);
+  // const response = await fetch(fileUrl);
   
-  if (!response.ok) {
-    throw new Error(`Failed to fetch file: ${response.statusText}`);
+  // if (!response.ok) {
+  //   throw new Error(`Failed to fetch file: ${response.statusText}`);
+  // }
+  const apiRes = await fetch('http://localhost:3001/api/get-file-url');
+
+  if (!apiRes.ok) {
+    throw new Error('Failed to fetch Cloudinary URL from database');
   }
 
-  return await response.arrayBuffer();
+  const data = await apiRes.json();
+
+  if (!data.file_url) {
+    throw new Error('Cloudinary URL not found in database');
+  }
+
+  // 2. Download file dari Cloudinary
+  const fileRes = await fetch(data.file_url);
+
+  if (!fileRes.ok) {
+    throw new Error('Failed to download file from Cloudinary');
+  }
+
+  // 3. Return Excel file sebagai ArrayBuffer
+  return await fileRes.arrayBuffer();
 };
