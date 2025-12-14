@@ -33,9 +33,24 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataLoaded, currentData }) =>
 
       workbook.SheetNames.forEach((sheetName: string) => {
         const sheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { 
+          header: 1, 
+          raw: false,
+          defval: ''
+        });
 
         if (jsonData.length === 0) return;
+
+        // Get hyperlinks from sheet if available
+        const hyperlinks: Record<string, string> = {};
+        if (sheet['!links']) {
+          Object.keys(sheet['!links']).forEach(cellAddress => {
+            const link = sheet['!links'][cellAddress];
+            if (link && link.Target) {
+              hyperlinks[cellAddress] = link.Target;
+            }
+          });
+        }
 
         // Dynamic Header Detection
         const headers = (jsonData[0] as any[]).map(h => String(h || '').toLowerCase());
@@ -44,6 +59,10 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataLoaded, currentData }) =>
           const idx = headers.findIndex(h => keywords.some(k => h.includes(k)));
           return idx !== -1 ? idx : defaultIdx;
         };
+
+        // Check if this is Glossary Issue category
+        const isGlossaryIssue = sheetName.toLowerCase().includes('glossary') && 
+                               sheetName.toLowerCase().includes('issue');
   
         const idxNo = findIdx(['no'], 0);
         const idxDesc = findIdx(['deskripsi', 'description', 'desc'], 1);
@@ -54,18 +73,63 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataLoaded, currentData }) =>
         const idxEx = findIdx(['contoh', 'example', 'nilai'], 6);
         const idxStep = findIdx(['step', 'langkah', 'catatan', 'note'], 7);
         
-        const rows = jsonData.slice(1).map((row: any[]) => {
-          return {
+        // For Glossary Issue: find specific columns
+        const idxDeskripsiIssue = isGlossaryIssue ? findIdx(['deskripsi issue', 'deskripsiissue'], 1) : -1;
+        const idxDokumentasiIssue = isGlossaryIssue ? findIdx(['dokumentasi issue', 'dokumentasiissue', 'dokumentasi'], -1) : -1;
+
+        // Helper to convert column index to Excel column letter
+        const colToLetter = (col: number): string => {
+          let result = '';
+          while (col >= 0) {
+            result = String.fromCharCode(65 + (col % 26)) + result;
+            col = Math.floor(col / 26) - 1;
+          }
+          return result;
+        };
+
+        // Helper to get cell value with hyperlink support
+        const getCellValue = (colIndex: number, rowIdx: number) => {
+          if (colIndex === -1) return '';
+          const cellValue = String((jsonData[rowIdx + 1] as any[])[colIndex] || '').trim();
+          const excelRow = rowIdx + 2;
+          const excelCol = colToLetter(colIndex);
+          const cellAddress = `${excelCol}${excelRow}`;
+          if (hyperlinks[cellAddress]) {
+            console.log(`[FileUpload] Found hyperlink for ${cellAddress}:`, hyperlinks[cellAddress]);
+            return hyperlinks[cellAddress];
+          }
+          if (cellValue && (cellValue.startsWith('http://') || cellValue.startsWith('https://'))) {
+            console.log(`[FileUpload] Found URL in cell value for ${cellAddress}:`, cellValue);
+            return cellValue;
+          }
+          return cellValue;
+        };
+        
+        const rows = jsonData.slice(1).map((row: any[], rowIndex: number) => {
+          const baseRow = {
             no: row[idxNo] || '',
-            deskripsi: row[idxDesc] || '',
-            jenisOperasi: row[idxType] || '',
-            namaTabel: row[idxTable] || '',
-            query: row[idxQuery] || '',
-            kolom: row[idxCol] || '',
-            contohNilai: row[idxEx] || '',
-            step: row[idxStep] || ''
-          } as QueryRow;
-        }).filter((r: QueryRow) => r.query || r.deskripsi);
+            deskripsi: isGlossaryIssue && idxDeskripsiIssue !== -1 
+              ? getCellValue(idxDeskripsiIssue, rowIndex) 
+              : getCellValue(idxDesc, rowIndex),
+            jenisOperasi: getCellValue(idxType, rowIndex),
+            namaTabel: getCellValue(idxTable, rowIndex),
+            query: getCellValue(idxQuery, rowIndex),
+            kolom: getCellValue(idxCol, rowIndex),
+            contohNilai: getCellValue(idxEx, rowIndex),
+            step: getCellValue(idxStep, rowIndex)
+          } as any;
+
+          if (isGlossaryIssue) {
+            if (idxDeskripsiIssue !== -1) {
+              baseRow.deskripsiIssue = getCellValue(idxDeskripsiIssue, rowIndex);
+            }
+            if (idxDokumentasiIssue !== -1) {
+              baseRow.dokumentasiIssue = getCellValue(idxDokumentasiIssue, rowIndex);
+            }
+          }
+
+          return baseRow;
+        }).filter((r: QueryRow) => r.query || r.deskripsi || (r as any).deskripsiIssue);
 
         if (rows.length > 0) {
           allProjects.push({

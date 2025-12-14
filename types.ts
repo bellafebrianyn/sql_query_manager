@@ -7,6 +7,9 @@ export interface QueryRow {
   kolom: string;
   contohNilai: string;
   step: string;
+  // For Glossary Issue category
+  deskripsiIssue?: string; // Alternative to deskripsi for Glossary Issue
+  dokumentasiIssue?: string; // Image URL or path for issue screenshot
 }
 
 export interface ProjectData {

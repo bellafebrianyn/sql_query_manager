@@ -27,17 +27,40 @@ const App: React.FC = () => {
 
     workbook.SheetNames.forEach((sheetName: string) => {
       const sheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      
+      // Read data with raw values to preserve URLs
+      const jsonData = XLSX.utils.sheet_to_json(sheet, { 
+        header: 1, 
+        raw: false, // Convert to strings to preserve URLs
+        defval: '' // Default value for empty cells
+      });
       
       if (jsonData.length === 0) return;
 
+      // Get hyperlinks from sheet if available
+      const hyperlinks: Record<string, string> = {};
+      if (sheet['!links']) {
+        Object.keys(sheet['!links']).forEach(cellAddress => {
+          const link = sheet['!links'][cellAddress];
+          if (link && link.Target) {
+            hyperlinks[cellAddress] = link.Target;
+          }
+        });
+      }
+
       // Detect Header Indices
-      const headers = (jsonData[0] as any[]).map(h => String(h || '').toLowerCase());
+      const headers = (jsonData[0] as any[]).map(h => {
+        const headerStr = String(h || '').toLowerCase();
+        return headerStr;
+      });
       
       const findIdx = (keywords: string[], defaultIdx: number) => {
         const idx = headers.findIndex(h => keywords.some(k => h.includes(k)));
         return idx !== -1 ? idx : defaultIdx;
       };
+
+      // Check if this is Glossary Issue category
+      const isGlossaryIssue = sheetName.toLowerCase().includes('glossary') && sheetName.toLowerCase().includes('issue');
 
       const idxNo = findIdx(['no'], 0);
       const idxDesc = findIdx(['deskripsi', 'description', 'desc'], 1);
@@ -47,17 +70,78 @@ const App: React.FC = () => {
       const idxCol = findIdx(['kolom', 'column'], 5);
       const idxEx = findIdx(['contoh', 'example', 'nilai'], 6);
       const idxStep = findIdx(['step', 'langkah', 'catatan', 'note'], 7);
+      
+      // For Glossary Issue: find specific columns
+      const idxDeskripsiIssue = isGlossaryIssue ? findIdx(['deskripsi issue', 'deskripsiissue'], 1) : -1;
+      const idxDokumentasiIssue = isGlossaryIssue ? findIdx(['dokumentasi issue', 'dokumentasiissue', 'dokumentasi'], -1) : -1;
 
-      const rows = jsonData.slice(1).map((row: any[]) => ({
-        no: row[idxNo] || '',
-        deskripsi: row[idxDesc] || '',
-        jenisOperasi: row[idxType] || '',
-        namaTabel: row[idxTable] || '',
-        query: row[idxQuery] || '',
-        kolom: row[idxCol] || '',
-        contohNilai: row[idxEx] || '',
-        step: row[idxStep] || ''
-      })).filter((r: any) => r.query || r.deskripsi);
+      const rows = jsonData.slice(1).map((row: any[], rowIndex: number) => {
+        // Helper to convert column index to Excel column letter (A, B, C, ..., Z, AA, AB, ...)
+        const colToLetter = (col: number): string => {
+          let result = '';
+          while (col >= 0) {
+            result = String.fromCharCode(65 + (col % 26)) + result;
+            col = Math.floor(col / 26) - 1;
+          }
+          return result;
+        };
+
+        // Helper to get cell value with hyperlink support
+        const getCellValue = (colIndex: number, rowIdx: number) => {
+          if (colIndex === -1) return '';
+          
+          const cellValue = String(row[colIndex] || '').trim();
+          
+          // Convert row/col to Excel cell address (e.g., A2, B3, etc.)
+          const excelRow = rowIdx + 2; // +2: 1 for 0-indexed to 1-indexed, +1 for header row
+          const excelCol = colToLetter(colIndex);
+          const cellAddress = `${excelCol}${excelRow}`;
+          
+          // Check if there's a hyperlink for this cell
+          if (hyperlinks[cellAddress]) {
+            console.log(`[Glossary Issue] Found hyperlink for ${cellAddress}:`, hyperlinks[cellAddress]);
+            return hyperlinks[cellAddress];
+          }
+          
+          // Also check if cell value itself is a URL
+          if (cellValue && (cellValue.startsWith('http://') || cellValue.startsWith('https://'))) {
+            console.log(`[Glossary Issue] Found URL in cell value for ${cellAddress}:`, cellValue);
+            return cellValue;
+          }
+          
+          return cellValue;
+        };
+
+        const baseRow = {
+          no: row[idxNo] || '',
+          deskripsi: isGlossaryIssue && idxDeskripsiIssue !== -1 
+            ? getCellValue(idxDeskripsiIssue, rowIndex) 
+            : getCellValue(idxDesc, rowIndex),
+          jenisOperasi: getCellValue(idxType, rowIndex),
+          namaTabel: getCellValue(idxTable, rowIndex),
+          query: getCellValue(idxQuery, rowIndex),
+          kolom: getCellValue(idxCol, rowIndex),
+          contohNilai: getCellValue(idxEx, rowIndex),
+          step: getCellValue(idxStep, rowIndex)
+        };
+
+        // Add Glossary Issue specific fields
+        if (isGlossaryIssue) {
+          if (idxDeskripsiIssue !== -1) {
+            (baseRow as any).deskripsiIssue = getCellValue(idxDeskripsiIssue, rowIndex);
+          }
+          if (idxDokumentasiIssue !== -1) {
+            const docUrl = getCellValue(idxDokumentasiIssue, rowIndex);
+            (baseRow as any).dokumentasiIssue = docUrl;
+            // Debug logging
+            if (docUrl) {
+              console.log(`[Glossary Issue] Row ${rowIndex + 1}: Dokumentasi Issue URL =`, docUrl);
+            }
+          }
+        }
+
+        return baseRow;
+      }).filter((r: any) => r.query || r.deskripsi || r.deskripsiIssue);
 
       if (rows.length > 0) {
         allProjects.push({ projectName: sheetName, rows: rows });
